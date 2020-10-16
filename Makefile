@@ -10,5 +10,5 @@ test:
 	done
 
 lint:
-	go get -u github.com/golangci/golangci-lint/cmd/golangci-lint
+	go get github.com/golangci/golangci-lint/cmd/golangci-lint@v1.32.0
 	golangci-lint run --enable golint --enable gocyclo

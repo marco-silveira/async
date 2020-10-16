@@ -7,20 +7,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/StudioSol/async"
-	. "github.com/smartystreets/goconvey/convey"
 )
-
-var (
-	ctx context.Context
-)
-
-func init() {
-	ctx = context.Background()
-}
 
 func TestRun(t *testing.T) {
-	Convey("Given two AsyncFunc functions returning non error", t, func() {
+	t.Run("Two AsyncFunc success", func(t *testing.T) {
 		var exec [2]bool
 		f1 := func(_ context.Context) error {
 			exec[0] = true
@@ -32,15 +25,13 @@ func TestRun(t *testing.T) {
 			return nil
 		}
 
-		Convey("It should be executed properly", func() {
-			err := async.Run(context.Background(), f1, f2)
-			So(err, ShouldBeNil)
-			So(exec[0], ShouldBeTrue)
-			So(exec[1], ShouldBeTrue)
-		})
+		err := async.Run(context.Background(), f1, f2)
+		require.Nil(t, err)
+		require.True(t, exec[0])
+		require.True(t, exec[1])
 	})
 
-	Convey("Given two AsyncFunc and one of them returning an error", t, func() {
+	t.Run("Two AsyncFunc, one fails", func(t *testing.T) {
 		var errTest = errors.New("test error")
 		f1 := func(_ context.Context) error {
 			return errTest
@@ -50,13 +41,11 @@ func TestRun(t *testing.T) {
 			return nil
 		}
 
-		Convey("async.Run() should return that error", func() {
-			err := async.Run(context.Background(), f1, f2)
-			So(err, ShouldEqual, errTest)
-		})
+		err := async.Run(context.Background(), f1, f2)
+		require.True(t, errors.Is(errTest, err))
 	})
 
-	Convey("Given two AsyncFunc and one of them executing a panic call", t, func() {
+	t.Run("Two AsyncFunc, one panics", func(t *testing.T) {
 		f1 := func(_ context.Context) error {
 			panic(errors.New("test panic"))
 		}
@@ -65,14 +54,12 @@ func TestRun(t *testing.T) {
 			return nil
 		}
 
-		Convey("async.Run() should return that panic error", func() {
-			err := async.Run(context.Background(), f1, f2)
-			So(err, ShouldNotBeNil)
-			So(err.Error(), ShouldContainSubstring, "async.Run: panic test panic")
-		})
+		err := async.Run(context.Background(), f1, f2)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "async.Run: panic test panic")
 	})
 
-	Convey("Given two AsyncFunc and one of them executing a panic call", t, func() {
+	t.Run("Two AsyncFunc and one panics, the other doesn't execute", func(t *testing.T) {
 		var mu sync.Mutex
 		var exec [2]bool
 
@@ -89,44 +76,38 @@ func TestRun(t *testing.T) {
 			return nil
 		}
 
-		Convey("The other function should not be executed if does not need it", func() {
-			_ = async.Run(context.Background(), f1, f2)
-			mu.Lock()
-			So(exec[1], ShouldBeFalse)
-			mu.Unlock()
-		})
+		_ = async.Run(context.Background(), f1, f2)
+		mu.Lock()
+		require.False(t, exec[1])
+		mu.Unlock()
 	})
 
-	Convey("Given an AsyncFunc executing a panic call", t, func() {
+	t.Run("If panics, cancel context", func(t *testing.T) {
 		var copyCtx context.Context
 		f1 := func(ctx context.Context) error {
 			copyCtx = ctx
 			panic(errors.New("test panic"))
 		}
 
-		Convey("It should cancel the context", func() {
-			err := async.Run(context.Background(), f1)
-			So(err, ShouldNotBeNil)
-			<-copyCtx.Done()
-			So(copyCtx.Err(), ShouldNotBeNil)
-		})
+		err := async.Run(context.Background(), f1)
+		require.Error(t, err)
+		<-copyCtx.Done()
+		require.Error(t, copyCtx.Err())
 	})
 
-	Convey("Given a cancellable context", t, func() {
+	t.Run("cancel children when cancellable context is canceled", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.TODO())
-		Convey("When cancelled", func() {
-			cancel()
-			Convey("It should cancel its children as well", func() {
-				var childCtx context.Context
-				f1 := func(ctx context.Context) error {
-					childCtx = ctx
-					return nil
-				}
-				err := async.Run(ctx, f1)
-				So(err, ShouldBeNil)
-				<-childCtx.Done()
-				So(childCtx.Err(), ShouldNotBeNil)
-			})
-		})
+		cancel()
+
+		var childCtx context.Context
+		f1 := func(ctx context.Context) error {
+			childCtx = ctx
+			return nil
+		}
+
+		err := async.Run(ctx, f1)
+		require.Nil(t, err)
+		<-childCtx.Done()
+		require.Error(t, childCtx.Err())
 	})
 }
